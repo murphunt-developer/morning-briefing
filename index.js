@@ -1,15 +1,14 @@
-import OpenAI from "openai";
-import * as dotenv from 'dotenv';
-dotenv.config();
+import { buildWeatherForcast } from './src/weather.js';
+import { generateSummary } from './src/openai.js';
+import { pullNewsData } from './src/news.js';
+import { sendEmail } from './src/email.js';
+import { buildEmailHtml } from './src/formatters.js';
 
-const API_KEY = process.env.OPENAI_API_KEY;
-const client = new OpenAI({
-  apiKey: API_KEY,
-});
+const weatherSummary = await buildWeatherForcast('Mission%20Viejo');
+const newsData = await pullNewsData();
+const newsSummary = await generateSummary(newsData);
 
-const response = await client.responses.create({
-  model: "gpt-5.1",
-  input: "Write a short bedtime story about a unicorn.",
-});
+const emailHtmlContent = buildEmailHtml(newsSummary, weatherSummary)
+const textContent = `Your daily brief is attached. News Summary:\n${newsSummary}\n\nWeather:\n${weatherSummary}`;
 
-console.log(response.output_text);
+sendEmail('36murph36@gmail.com', 'murphunt.developer@gmail.com', 'Morning Briefing', textContent, emailHtmlContent);
