@@ -1,86 +1,118 @@
-test('placeholder test', () => {});
+import { jest } from '@jest/globals';
+// Mocking the entire 'nodemailer' module to prevent real emails from being sent
+const mockSendMail = jest.fn();
+const mockCreateTransport = jest.fn(() => ({
+    sendMail: mockSendMail,
+}));
 
-// // tst/email.test.js
-// import {jest} from '@jest/globals';
+jest.mock('nodemailer', () => ({
+    createTransport: mockCreateTransport,
+}));
 
+// Mocking the 'dotenv' config function to avoid dependency on actual .env file during test
+jest.mock('dotenv', () => ({
+    config: jest.fn(),
+}));
 
-// // 1. Mock the entire nodemailer module
-// const mockSendMail = jest.fn();
-// const mockCreateTransport = jest.fn(() => ({
-//     sendMail: mockSendMail,
-// }));
+// Set mock environment variables for the test
+process.env.EMAIL_USER = 'test@example.com';
+process.env.EMAIL_PASS = 'testpassword';
 
-// // Jest way to mock an external dependency
-// jest.mock('nodemailer', () => ({
-//     createTransport: mockCreateTransport,
-// }));
+// Import the function to be tested AFTER mocks are set up
+import { sendEmail } from '../src/email.js';
 
-// // Import the function after the mock is set up
-// import { sendEmail } from '../src/email.js'; // Adjust path as necessary
-// // Assuming your sendEmail function is in 'src/email.js'
+const MOCK_DATE = new Date('2024-05-15T10:00:00Z');
+const MOCK_DATE_STRING = '5/15/2024';
 
-// describe('sendEmail', () => {
+describe('sendEmail', () => {
+
+    const RealDate = Date;
     
-//     // Reset the mock before each test to ensure tests are isolated
-//     beforeEach(() => {
-//         mockSendMail.mockClear();
-//         // Set a mock successful response for the happy path tests
-//         mockSendMail.mockResolvedValue({ messageId: 'mock-12345' }); 
+    // Before each test, reset the mock function calls
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const MockDate = jest.fn(() => MOCK_DATE);
+      MockDate.now = jest.fn(() => MOCK_DATE.getTime()); 
+      global.Date = MockDate;
+    });
+
+    // Restore the original Date object after all tests
+    afterAll(() => {
+        global.Date = RealDate;
+    });
+
+    // Test Case 1: Successful email sending
+    test('should call sendMail with correct mailOptions and log success', async () => {
         
-//         // Mock Date to ensure the subject line is consistent for testing
-//         jest.useFakeTimers();
-//         // Set a fixed date for reliable date string generation (e.g., '12/6/2025')
-//         jest.setSystemTime(new Date('2025-12-06T10:00:00.000Z')); 
-//     });
+        // Arrange
+        const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+        mockSendMail.mockResolvedValue({ messageId: 'test-message-id-123' });
 
-//     afterEach(() => {
-//         jest.useRealTimers();
-//     });
+        const to = 'recipient@test.com';
+        const from = 'sender@test.com';
+        const subject = 'Daily Briefing';
+        const textContent = 'Plain text content.';
+        const htmlContent = '<h1>HTML Content</h1>';
 
-//     it('should call transporter.sendMail with the correct mail options', async () => {
-//         // --- Test Setup ---
-//         const to = 'recipient@example.com';
-//         const from = 'sender@example.com';
-//         const subject = 'Morning Briefing';
-//         const textContent = 'Plain text version.';
-//         const htmlContent = '<h1>HTML version.</h1>';
+        // Act
+        await sendEmail(to, from, subject, textContent, htmlContent);
 
-//         // --- Execute ---
-//         await sendEmail(to, from, subject, textContent, htmlContent);
+        // Assert
+        // 1. Check if the sendMail mock was called once
+        expect(mockSendMail).toHaveBeenCalledTimes(1);
 
-//         // --- Assertions ---
-//         expect(mockSendMail).toHaveBeenCalledTimes(1);
+        // 2. Check the mailOptions passed to sendMail
+        const expectedMailOptions = {
+            from: `Murphunt Dev Tools <${from}>`,
+            to: to,
+            subject: `${subject} - ${MOCK_DATE_STRING}`, 
+            text: textContent,
+            html: htmlContent,
+        };
+        expect(mockSendMail).toHaveBeenCalledWith(expectedMailOptions);
         
-//         // Get the arguments passed to sendMail
-//         const callArgs = mockSendMail.mock.calls[0][0];
+        // 3. Check if success was logged
+        expect(consoleLogSpy).toHaveBeenCalledWith(
+            '✅ Message sent: %s',
+            'test-message-id-123'
+        );
 
-//         // Verify all mail options were correctly formatted and passed
-//         expect(callArgs.to).toBe(to);
-//         expect(callArgs.from).toBe(`Murphunt Dev Tools <${from}>`);
-//         expect(callArgs.text).toBe(textContent);
-//         expect(callArgs.html).toBe(htmlContent);
+        consoleLogSpy.mockRestore();
+    }, 10000);
+
+    // Test Case 2: Error handling during email sending
+    test('should catch and log an error if sendMail fails', async () => {
         
-//         // Verify the dynamic subject line (Subject + Date)
-//         const expectedDateString = new Date().toLocaleDateString(); // Mocked date: 12/6/2025
-//         expect(callArgs.subject).toBe(`${subject} - ${expectedDateString}`);
-//     });
+        // Arrange
+        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        const mockError = new Error('SMTP connection failed');
+        mockSendMail.mockRejectedValue(mockError);
 
-//     it('should log an error if transporter.sendMail fails', async () => {
-//         // Mock the console.error function to prevent actual logging during the test
-//         const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+        // Act
+        await sendEmail('test@fail.com', 'test@from.com', 'Fail', 'text', 'html');
+
+        // Assert
+        // 1. Check if sendMail was still attempted
+        expect(mockSendMail).toHaveBeenCalledTimes(1);
         
-//         // --- Test Setup ---
-//         const mockError = new Error('SMTP connection failed');
-//         mockSendMail.mockRejectedValue(mockError); // Force the sendMail function to fail
+        // 2. Check if the error was logged
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            '❌ Error sending email:',
+            mockError
+        );
 
-//         // --- Execute ---
-//         await sendEmail('a', 'b', 'c', 'd', 'e'); // Arguments don't matter here
-
-//         // --- Assertion ---
-//         // Verify that console.error was called with the correct error message
-//         expect(consoleErrorSpy).toHaveBeenCalledWith('❌ Error sending email:', mockError);
-
-//         // Clean up the spy
-//         consoleErrorSpy.mockRestore();
-//     });
-// });
+        consoleErrorSpy.mockRestore();
+    }, 10000);
+    
+    // Test Case 3: Transporter setup (Implicitly tested but good to verify)
+    test('should ensure nodemailer.createTransport is configured with environment variables', () => {
+        // Assert that the mock transporter was created with the mocked process.env values
+        expect(mockCreateTransport).toHaveBeenCalledWith({
+            service: 'gmail',
+            auth: {
+                user: 'test@example.com',
+                pass: 'testpassword',
+            }
+        });
+    }, 10000);
+});

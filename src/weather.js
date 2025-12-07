@@ -14,11 +14,11 @@ const fetchData = async (url) => {
 }
 
 /**
- * Converts Kelvin to Celsius (and rounds to the nearest integer).
+ * Converts Kelvin to Fahrenheit (and rounds to the nearest integer).
  * @param {number} K - Temperature in Kelvin.
- * @returns {string} Temperature string in Celsius, e.g., "23°C".
+ * @returns {string} Temperature string in Fahrenheit, e.g., "73°F".
  */
-const kelvinToCelsius = (K) => `${Math.round(K - 273.15)}°C`;
+const kelvinToFahrenheit = (K) => `${Math.round((K - 273.15) * 9/5 + 32)}°F`;
 
 /**
  * Converts meteorological degrees (0-360) to a cardinal direction string.
@@ -32,8 +32,21 @@ const degToDirection = (deg) => {
 };
 
 /**
- * Formats the raw forecast data into an HTML block,
- * limited to the first day of the forecast data.
+ * Function to get a simple icon/emoji based on weather condition.
+ */
+const getConditionIcon = (desc) => {
+    if (desc.includes("rain") || desc.includes("drizzle")) return "🌧️";
+    if (desc.includes("cloud") && desc.includes("sun")) return "🌤️";
+    if (desc.includes("cloud")) return "☁️";
+    if (desc.includes("clear")) return "☀️";
+    if (desc.includes("snow")) return "❄️";
+    if (desc.includes("mist") || desc.includes("fog")) return "🌫️";
+    return "---";
+};
+
+/**
+ * Formats the raw forecast data into an HTML block using a horizontal table structure
+ * to ensure reliable rendering and scrolling on mobile email clients.
  * @param {Object} data - The raw forecast data object.
  * @returns {string} The fully formatted HTML output.
  */
@@ -43,7 +56,6 @@ const formatHourlyForecast = (data) => {
     }
 
     // --- Determine the target day for the forecast ---
-    // (Existing logic preserved to filter by day)
     const targetDayStr = data.list[0].dt_txt.substring(0, 10);
     const filteredList = data.list.filter(item => item.dt_txt.startsWith(targetDayStr));
 
@@ -55,42 +67,64 @@ const formatHourlyForecast = (data) => {
     const forecastDate = new Date(targetDayStr);
     const formattedDate = forecastDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     
-    // --- Header Section - Now using HTML ---
-    let output = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333;">`;
-    output += `<h3 style="color: #007bff; margin-bottom: 5px;">Hourly Forecast for ${cityName}</h3>`;
-    output += `<p style="font-weight: bold; margin-top: 0;">Date: ${formattedDate}</p>`;
-    output += `<p style="font-style: italic; font-size: 12px;">(All temperatures are in Celsius)</p>`;
-    output += `<hr style="border: 0; border-top: 1px solid #ddd; margin: 10px 0;">`;
+    // --- Outer Container (Wrapper for Scroll) ---
+    // Added padding and border styles to the wrapper div
+    let output = `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.4; color: #333; padding: 10px; border-radius: 8px;">`;
+    
+    // --- Header Section ---
+    output += `<h3 style="color: #007bff; margin: 0 0 5px 0; font-size: 16px;">Hourly Forecast for ${cityName}</h3>`;
+    output += `<p style="font-weight: bold; margin: 0 0 10px 0; font-size: 12px;">${formattedDate} | All temperatures in Fahrenheit</p>`;
+    
+    // --- Forecast Body (Horizontal Scroll Container using Table) ---
+    // The outer div handles overflow.
+    output += `<div style="overflow-x: auto; padding-bottom: 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; /* Firefox */ -ms-overflow-style: none; /* IE and Edge */">`;
+    output += `<style> .horizontal-scroll-container::-webkit-scrollbar { display: none; } </style>`;
 
-    // --- Forecast Body ---
+    // The inner table has a fixed width (120px * 8 items = 960px) to guarantee horizontal layout and scroll
+    output += `<table role="presentation" border="0" cellpadding="0" cellspacing="0" style="width: 100%; min-width: 900px;"><tr>`;
+
     filteredList.forEach(item => {
         const date = new Date(item.dt_txt);
         const timeString = date.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
+            hour: 'numeric', 
             hour12: true 
         });
-        const dayString = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-        const tempC = kelvinToCelsius(item.main.temp);
+        const tempF = kelvinToFahrenheit(item.main.temp);
         const description = item.weather[0].description;
-        const windSpeed = item.wind.speed.toFixed(1); // m/s
+        const windSpeed = item.wind.speed.toFixed(0); 
         const windDir = degToDirection(item.wind.deg);
-        const pop = Math.round(item.pop * 100); // Probability of precipitation
-
-        // Format for each hour using HTML lists and spans for structure
-        output += `<div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #eee;">`;
-        output += `<p style="font-weight: bold; margin: 0;">${dayString} ${timeString}</p>`;
-        output += `<ul style="list-style: none; padding-left: 15px; margin: 5px 0;">`;
-        output += `<li>🌡️ Temp: <span style="font-weight: bold;">${tempC}</span> (Feels like: ${kelvinToCelsius(item.main.feels_like)})</li>`;
-        output += `<li>☁️ Condition: ${description.charAt(0).toUpperCase() + description.slice(1)}</li>`;
-        output += `<li>💨 Wind: ${windSpeed} m/s from ${windDir}</li>`;
-        output += `<li>💧 Humidity: ${item.main.humidity}%, Rain Chance: ${pop}%</li>`;
-        output += `</ul>`;
-        output += `</div>`;
+        const pop = Math.round(item.pop * 100); 
+        
+        // --- Single Hour Block (Table Cell) ---
+        // Use TD for guaranteed horizontal layout
+        output += `<td style="width: 120px; padding: 0 7.5px; vertical-align: top;">`; 
+        
+        // Inner forecast content DIV for styling
+        output += `<div style="text-align: center; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background-color: #f9f9f9; height: 100%;">`;
+        
+        // Time
+        output += `<div style="font-weight: bold; font-size: 14px; color: #0056b3; margin-bottom: 5px;">${timeString.replace(/\s/g, '')}</div>`;
+        
+        // Icon/Temperature
+        output += `<div style="font-size: 24px; line-height: 1;">${getConditionIcon(description)}</div>`;
+        output += `<div style="font-size: 18px; font-weight: bold; color: #333; margin-bottom: 5px;">${tempF}</div>`;
+        
+        // Description/Details
+        output += `<div style="font-size: 12px; color: #666; margin-bottom: 3px;">${description.charAt(0).toUpperCase() + description.slice(1)}</div>`;
+        output += `<div style="font-size: 11px; color: #888;">🌬️ ${windSpeed}m/s from ${windDir}</div>`;
+        output += `<div style="font-size: 11px; color: ${pop > 50 ? 'red' : '#888'};">💧 ${pop}% Rain</div>`;
+        
+        output += `</div>`; // Close inner div
+        output += `</td>`; // Close TD
     });
     
-    output += `</div>`;
+    // Close the horizontal table and wrapper div
+    output += `</tr></table>`;
+    output += `</div>`; // Close overflow div
+
+    // Close the main container
+    output += `</div>`; 
     return output;
 };
 
